@@ -1,10 +1,15 @@
 
 const { Sequelize } = require('sequelize');
 
-const sequelize = new Sequelize('bloggy_db', 'postgres', '12345', {
-    host: 'localhost',
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
-    logging: false
+    logging: false,
+    dialectOptions: {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false
+        }
+    }
 });
 
 const connectDB = async () => {
@@ -13,6 +18,7 @@ const connectDB = async () => {
         console.log('Database connected successfully!');
     } catch (error) {
         console.error('Unable to connect to database:', error.message);
+        throw error;
     }
 };
 
