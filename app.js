@@ -1,23 +1,43 @@
+
 require('dotenv').config();
 
 const express = require('express');
 const { connectDB, sequelize } = require('./db');
-const { Post } = require('./postModel');
-const { User } = require('./userModel');
+
 const authenticateToken = require('./middleware/auth.middleware');
-const userRoutes = require('./routes/user.routes');
-
-const noteRoutes = require('./routes/note.routes');
-const { Note } = require('./noteModel');
-
-const authRoutes = require('./routes/auth.routes');
 const errorhandler = require('./middleware/errorhandler');
+
+const userRoutes = require('./routes/user.routes');
+const noteRoutes = require('./routes/note.routes');
+const authRoutes = require('./routes/auth.routes');
+const postRoutes = require('./routes/post.routes');
+
+const { blogger, oauth2Client } = require('./blogger');
 
 const app = express();
 
-const { google } = require('googleapis');
-const { oauth2Client, blogger } = require('./blogger');
+app.use(express.json());
 
+// Health check / welcome route
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Welcome to Bloggy API'
+    });
+});
+
+// Authentication routes
+app.use('/auth', authRoutes);
+
+// Post routes
+app.use('/posts', authenticateToken, postRoutes);
+
+// User routes
+app.use('/users', userRoutes);
+
+// Note routes
+app.use('/notes', noteRoutes);
+
+// Blogger OAuth authorization
 app.get('/blogger/auth', (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -28,6 +48,7 @@ app.get('/blogger/auth', (req, res) => {
     res.redirect(url);
 });
 
+// Blogger OAuth callback
 app.get('/oauth2callback', async (req, res) => {
     try {
         const { tokens } = await oauth2Client.getToken(req.query.code);
@@ -37,46 +58,43 @@ app.get('/oauth2callback', async (req, res) => {
             userId: 'self'
         });
 
-        console.log('Available Blogger blogs:');
+        const blogs = result.data.items || [];
 
-        for (const blog of result.data.items || []) {
-            console.log(`Title: ${blog.name}, ID: ${blog.id}`);
-        }
-
-        res.send(
-            'Google authorization successful! Check your terminal for your Blogger blog ID.'
-        );
+        res.json({
+            message: 'Google authorization successful',
+            blogs: blogs.map((blog) => ({
+                title: blog.name,
+                id: blog.id
+            }))
+        });
     } catch (error) {
         console.error('Blogger authorization failed:', error.message);
-        res.status(500).send('Blogger authorization failed. Check the terminal.');
+
+        res.status(500).json({
+            message: 'Blogger authorization failed'
+        });
     }
 });
 
-
-app.use(express.json());
-
-app.get('/', (req, res) => {
-    res.json({
-        message: 'Welcome to Bloggy API'
-    });
-});
-
-app.use('/auth', authRoutes);
-
-const postRoutes = require('./routes/post.routes');
-
-app.use('/posts', authenticateToken, postRoutes);
-
-console.log('Blogger publish route registered');
-
+// Publish a Blogger post
 app.post('/blogger/posts', async (req, res) => {
-    console.log('Blogger POST route reached');
-
     try {
         const { title, content } = req.body;
-        if (!title || !content) {
+
+        if (
+            typeof title !== 'string' ||
+            !title.trim() ||
+            typeof content !== 'string' ||
+            !content.trim()
+        ) {
             return res.status(400).json({
                 message: 'Title and content are required'
+            });
+        }
+
+        if (!process.env.BLOGGER_BLOG_ID) {
+            return res.status(500).json({
+                message: 'Blogger blog ID is not configured'
             });
         }
 
@@ -101,32 +119,35 @@ app.post('/blogger/posts', async (req, res) => {
     }
 });
 
-app.use('/users', userRoutes);
-
+// 404 handler MUST come after all routes
 app.use((req, res) => {
     res.status(404).json({
         message: 'Route not found'
     });
 });
 
-app.use('/notes', noteRoutes);
-
-
+// Error handler MUST come after routes
 app.use(errorhandler);
 
-const PORT = 3000;
+// Start server locally; Vercel can import the Express app
+if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
 
-const startServer = async () => {
-    try {
-        await connectDB();
-        await sequelize.sync();
+    const startServer = async () => {
+        try {
+            await connectDB();
+            await sequelize.sync();
 
-        app.listen(PORT, () => {
-            console.log(`Bloggy server is running on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error('Server startup failed:', error.message);
-    }
-};
+            app.listen(PORT, () => {
+                console.log(`Bloggy server is running on port ${PORT}`);
+            });
+        } catch (error) {
+            console.error('Server startup failed:', error.message);
+            process.exitCode = 1;
+        }
+    };
 
-startServer();
+    startServer();
+}
+
+module.exports = app;
