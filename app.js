@@ -18,7 +18,7 @@ const app = express();
 
 app.use(express.json());
 
-// Health check / welcome route
+// Welcome route
 app.get('/', (req, res) => {
     res.json({
         message: 'Welcome to Bloggy API'
@@ -119,17 +119,17 @@ app.post('/blogger/posts', async (req, res) => {
     }
 });
 
-// 404 handler MUST come after all routes
+// 404 handler
 app.use((req, res) => {
     res.status(404).json({
         message: 'Route not found'
     });
 });
 
-// Error handler MUST come after routes
+// Error handler
 app.use(errorhandler);
 
-// Start server locally; Vercel can import the Express app
+// Start server locally; Vercel imports the Express app
 if (require.main === module) {
     const PORT = process.env.PORT || 3000;
 
